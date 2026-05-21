@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const mcpTarget = env.VITE_MCP_TARGET || "http://localhost:8080";
   const remotePort = Number(env.VITE_REMOTE_PORT || env.VITE_PORT || 5175);
   const remoteOrigin = env.VITE_REMOTE_ORIGIN || `http://localhost:${remotePort}`;
+  const shouldGenerateFederationTypes = env.SKIP_FEDERATION_DTS !== "1";
 
   return {
     plugins: [
@@ -29,11 +30,13 @@ export default defineConfig(({ mode }) => {
         },
         bundleAllCSS: true,
         manifest: true,
-        dts: {
-          generateTypes: {
-            tsConfigPath: "./tsconfig.app.json",
-          },
-        },
+        dts: shouldGenerateFederationTypes
+          ? {
+              generateTypes: {
+                tsConfigPath: "./tsconfig.app.json",
+              },
+            }
+          : false,
         dev: {
           disableDynamicRemoteTypeHints: true,
         },

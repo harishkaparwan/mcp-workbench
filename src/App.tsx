@@ -22,10 +22,9 @@ const DEFAULT_CLIENT_VERSION = "0.0.0";
 const DEFAULT_TITLE = "MCP Workbench";
 const DEFAULT_SUBTITLE = "Connect, inspect, and operate any streamable HTTP MCP server from one professional interface.";
 const CONFIG_STORAGE_KEY = "mcp-workbench:config";
+const DEFAULT_REQUEST_HEADERS = JSON.stringify({}, null, 2);
 const DEFAULT_ARGUMENTS = JSON.stringify(
-  {
-    message: "Hello from React Vite",
-  },
+  {},
   null,
   2,
 );
@@ -50,6 +49,8 @@ type WorkbenchConfig = {
   title: string;
   subtitle: string;
   transport: "streamable-http";
+  requestHeaders: string;
+  defaultArguments: string;
 };
 
 export type McpConsoleProps = {
@@ -75,6 +76,8 @@ export default function App({
       title,
       subtitle,
       transport: "streamable-http" as const,
+      requestHeaders: DEFAULT_REQUEST_HEADERS,
+      defaultArguments: DEFAULT_ARGUMENTS,
     }),
     [clientName, clientVersion, defaultEndpoint, subtitle, title],
   );
@@ -87,7 +90,7 @@ export default function App({
   const [status, setStatus] = useState<Status>("idle");
   const [tools, setTools] = useState<McpTool[]>([]);
   const [selectedToolName, setSelectedToolName] = useState("");
-  const [argumentsText, setArgumentsText] = useState(DEFAULT_ARGUMENTS);
+  const [argumentsText, setArgumentsText] = useState(config.defaultArguments);
   const [resultText, setResultText] = useState("{}");
   const [error, setError] = useState("");
   const clientRef = useRef<Client | null>(null);
@@ -110,7 +113,11 @@ export default function App({
       await transportRef.current?.close().catch(() => undefined);
 
       const endpoint = new URL(config.serverUrl, window.location.origin);
-      const transport = new StreamableHTTPClientTransport(endpoint);
+      const transport = new StreamableHTTPClientTransport(endpoint, {
+        requestInit: {
+          headers: parseHeaders(config.requestHeaders),
+        },
+      });
       const client = new Client({
         name: config.clientName,
         version: config.clientVersion,
@@ -162,6 +169,7 @@ export default function App({
   function saveConfigurator() {
     const nextConfig = normalizeConfig(draftConfig, defaultConfig);
     setConfig(nextConfig);
+    setArgumentsText(nextConfig.defaultArguments);
     writeStoredConfig(nextConfig);
     setIsConfiguratorOpen(false);
   }
@@ -450,6 +458,16 @@ function McpConfigurator({
             </select>
           </div>
 
+          <div className="config-field wide">
+            <label htmlFor="config-request-headers">Request Headers JSON</label>
+            <textarea
+              id="config-request-headers"
+              value={config.requestHeaders}
+              onChange={(event) => updateField("requestHeaders", event.target.value)}
+              spellCheck={false}
+            />
+          </div>
+
           <div className="config-field">
             <label htmlFor="config-client-version">Client Version</label>
             <input
@@ -485,6 +503,18 @@ function McpConfigurator({
               id="config-subtitle"
               value={config.subtitle}
               onChange={(event) => updateField("subtitle", event.target.value)}
+            />
+          </div>
+
+          <div className="config-field wide">
+            <label htmlFor="config-default-arguments">Default Tool Arguments JSON</label>
+            <textarea
+              id="config-default-arguments"
+              value={config.defaultArguments}
+              onChange={(event) =>
+                updateField("defaultArguments", event.target.value)
+              }
+              spellCheck={false}
             />
           </div>
         </div>
@@ -563,6 +593,12 @@ function readStoredConfig() {
     if (parsedConfig.transport === "streamable-http") {
       nextConfig.transport = parsedConfig.transport;
     }
+    if (typeof parsedConfig.requestHeaders === "string") {
+      nextConfig.requestHeaders = parsedConfig.requestHeaders;
+    }
+    if (typeof parsedConfig.defaultArguments === "string") {
+      nextConfig.defaultArguments = parsedConfig.defaultArguments;
+    }
 
     return nextConfig;
   } catch {
@@ -587,5 +623,39 @@ function normalizeConfig(
     title: config.title.trim() || fallbackConfig.title,
     subtitle: config.subtitle.trim() || fallbackConfig.subtitle,
     transport: "streamable-http",
+    requestHeaders: normalizeJsonObjectText(
+      config.requestHeaders,
+      fallbackConfig.requestHeaders,
+    ),
+    defaultArguments: normalizeJsonObjectText(
+      config.defaultArguments,
+      fallbackConfig.defaultArguments,
+    ),
   };
+}
+
+function parseHeaders(headersText: string): Record<string, string> {
+  const parsedHeaders = JSON.parse(headersText) as Record<string, unknown>;
+
+  return Object.fromEntries(
+    Object.entries(parsedHeaders)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([key, value]) => [key, String(value)]),
+  );
+}
+
+function normalizeJsonObjectText(text: string, fallbackText: string) {
+  const trimmedText = text.trim();
+  if (!trimmedText) return fallbackText;
+
+  try {
+    const parsed = JSON.parse(trimmedText);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+      return fallbackText;
+    }
+
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return fallbackText;
+  }
 }
